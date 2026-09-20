@@ -960,6 +960,36 @@
       });
     });
   }
+  // ---------------- group rows by key columns, summing measure columns ----------------
+  // Rows whose keyFields all match are merged into one row: sumFields are totaled,
+  // avgFields are averaged (skipping null), everything else keeps the first row's value.
+  function groupAndSum(rows, keyFields, sumFields, avgFields){
+    avgFields = avgFields || [];
+    const groups = new Map();
+    const order = [];
+    rows.forEach(r=>{
+      const key = keyFields.map(f=>r[f]).join('␟');
+      let g = groups.get(key);
+      if(!g){
+        g = { row: {...r}, avgAcc: {} };
+        avgFields.forEach(f=>{ g.avgAcc[f] = []; });
+        sumFields.forEach(f=>{ g.row[f] = 0; });
+        groups.set(key, g);
+        order.push(key);
+      }
+      sumFields.forEach(f=>{ g.row[f] = (g.row[f]||0) + (r[f]||0); });
+      avgFields.forEach(f=>{ if(r[f] !== null && r[f] !== undefined) g.avgAcc[f].push(r[f]); });
+    });
+    return order.map(key=>{
+      const g = groups.get(key);
+      avgFields.forEach(f=>{
+        const vals = g.avgAcc[f];
+        g.row[f] = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+      });
+      return g.row;
+    });
+  }
+
   function sortRows(rows, key, dir, numericKeys){
     const isNum = numericKeys && numericKeys.has(key);
     return rows.slice().sort((a,b)=>{
@@ -1106,7 +1136,11 @@
     // Detail table
     const dtable = document.getElementById('table-detail');
     dtable.querySelector('thead').innerHTML = `<tr><th data-key="wh_code">WH CODE<span class="arrow"></span></th><th data-key="wh_name">WH NAME<span class="arrow"></span></th><th data-key="bu_code">BU CODE<span class="arrow"></span></th><th data-key="item_group">ITEM GROUP<span class="arrow"></span></th><th data-key="item_code">ITEM CODE<span class="arrow"></span></th><th data-key="item_description">ITEM DESC<span class="arrow"></span></th><th class="num" data-key="total">TOTAL<span class="arrow"></span></th></tr>`;
-    const sortedRows = sortRows(rows, detailSort.key, detailSort.dir, new Set(['total']));
+    const groupedDetailRows = groupAndSum(rows,
+      ['bu_code','wh_code','item_group','item_code','item_description','expired_flag','item_category','interval_expired','area','regional','wh_name','tipe_produk','expire_date'],
+      ['total'], []
+    );
+    const sortedRows = sortRows(groupedDetailRows, detailSort.key, detailSort.dir, new Set(['total']));
     wireSortableHeaders(dtable, detailSort, ()=>{ detailPage = 1; renderSnapshot(); });
 
     const totalPages = Math.max(1, Math.ceil(sortedRows.length / DETAIL_PAGE_SIZE));
@@ -1163,6 +1197,11 @@
     const table = document.getElementById(tableId);
     let rows = sheet1.filter(r=>r.tipe_produk===tipe && r.Catatan==='AREA');
     if(area !== 'ALL') rows = rows.filter(r=>r.area===area);
+    rows = groupAndSum(rows,
+      ['Catatan','tipe_produk','area','regional','wh_name'],
+      ['stock','sellout','stock_besar','stock_kecil'],
+      ['stock_days','score_ava','score_ssl','Index_Score']
+    );
     const threshold = tipe==='VOUCHER' ? 180 : 90;
     table.querySelector('thead').innerHTML = `<tr>
       <th data-key="area">AREA<span class="arrow"></span></th><th class="num" data-key="stock">STOCK<span class="arrow"></span></th>
@@ -1195,6 +1234,11 @@
 
   function renderFinalScoreTable(tableId, rows, sortState, rerenderFn, downloadBtnId){
     const table = document.getElementById(tableId);
+    rows = groupAndSum(rows,
+      ['catatan','area','regional','wh_name','note'],
+      ['score_perdana','score_voucher','final_score'],
+      []
+    );
     table.querySelector('thead').innerHTML = `<tr><th data-key="area">AREA<span class="arrow"></span></th><th data-key="regional">REGIONAL<span class="arrow"></span></th><th data-key="wh_name">WH<span class="arrow"></span></th><th class="num" data-key="final_score">FINAL SCORE<span class="arrow"></span></th><th data-key="note">NOTE<span class="arrow"></span></th></tr>`;
     rows = sortRows(rows, sortState.key, sortState.dir, finalScoreNumericKeys);
     wireSortableHeaders(table, sortState, rerenderFn);
@@ -1429,7 +1473,10 @@
     scoped.forEach(i=>{ catTotals[i.item_category] = (catTotals[i.item_category]||0) + (i.total||0); });
     drawPie(document.getElementById('pie-area-cat'), Object.keys(catTotals).sort().map(k=>({label:k, value:catTotals[k]})), 130);
 
-    let rows = scoped.slice().sort((a,b)=>{
+    let rows = groupAndSum(scoped,
+      ['bu_code','wh_code','item_group','item_code','item_description','expired_flag','item_category','interval_expired','area','regional','wh_name','tipe_produk','expire_date'],
+      ['total'], []
+    ).sort((a,b)=>{
       if(itemSort.key === 'expire_date'){
         const av = flexDateSort(a.expire_date), bv = flexDateSort(b.expire_date);
         return itemSort.dir==='asc' ? av-bv : bv-av;
