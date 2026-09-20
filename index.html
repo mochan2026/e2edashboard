@@ -849,11 +849,15 @@
     statusEl.textContent = silent ? 'Menghubungkan otomatis ke Google Drive...' : 'Memuat data dari Google Drive...';
     statusEl.className = 'drive-status loading';
 
+    // tambahkan penangkal cache (timestamp unik) supaya Google tidak menyajikan versi lama dari cache
+    const bust = '&_ts=' + Date.now();
+    const fetchUrl1 = url1 + bust, fetchUrl2 = url2 + bust, fetchUrl3 = url3 + bust;
+
     try{
       const [t1,t2,t3] = await Promise.all([
-        fetch(url1).then(r=>{ if(!r.ok) throw new Error('RBI_perhitungan gagal diambil (HTTP '+r.status+')'); return r.text(); }),
-        fetch(url2).then(r=>{ if(!r.ok) throw new Error('rbi_final_score gagal diambil (HTTP '+r.status+')'); return r.text(); }),
-        fetch(url3).then(r=>{ if(!r.ok) throw new Error('rbi_snapshot_stock gagal diambil (HTTP '+r.status+')'); return r.text(); }),
+        fetch(fetchUrl1, {cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error('RBI_perhitungan gagal diambil (HTTP '+r.status+')'); return r.text(); }),
+        fetch(fetchUrl2, {cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error('rbi_final_score gagal diambil (HTTP '+r.status+')'); return r.text(); }),
+        fetch(fetchUrl3, {cache:'no-store'}).then(r=>{ if(!r.ok) throw new Error('rbi_snapshot_stock gagal diambil (HTTP '+r.status+')'); return r.text(); }),
       ]);
 
       const newSheet1 = parsePerhitunganCSV(t1);
